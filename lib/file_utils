@@ -1,0 +1,20 @@
+#!/bin/bash         # intended to be sourced from other scripts
+# provides functions for processing strings
+
+
+
+
+
+
+
+
+type -t reserve_tmp_file >/dev/null && return 0
+reserve_tmp_file() {
+  local var=$1; shift
+  local base=${1:-tmp}; shift
+  
+  mkdir -p "$tmp_folder" || return 1
+  local internal_tmp_file=$(mktemp "$tmp_folder/$base.$$.XXXX")
+  eval "$var=$internal_tmp_file"
+  eval "cleanup_on_exit+='rm ${internal_tmp_file}* &>/dev/null || true;'"
+}

@@ -1,0 +1,38 @@
+#!/bin/bash
+# contains functions that require certain commands to be present
+
+
+
+
+
+
+
+
+require_oc() {
+  required_command "$oc_cmd" "brew install openshift-cli
+  if this fails, check that your proxy variables are exported and correct."
+}
+
+require_ctags() {
+  required_command ctags "brew install universal-ctags"
+}
+
+require_ldapsearch() {
+  required_command ldapsearch "brew install openldap"
+}
+
+require_jq() {
+  required_command jq "brew install jq"
+}
+
+require_yq() {
+  required_command yq "brew install yq"
+}
+
+require_etcdctl() {
+  required_command etcdctl "brew install etcd"
+}
+
+require_wrk() {
+  required_command wrk "you will need to install wrk2 and get it in your PATH. See https://github.com/giltene/wrk2"
+}

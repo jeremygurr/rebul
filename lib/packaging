@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# requires system_identification lib
+
+unset install_package
+install_package() {
+local package result os
+while [ "$1" ]; do
+  package="$1"; shift
+  if system_matches "linux debian"; then
+    case "$package" in
+      bind-tools)
+        package=dnsutils
+        ;;
+    esac
+  elif system_matches "linux alpine"; then
+    :
+  else
+    echo "I don't know how to install a package on this system: [$os]" >&2
+    return 1
+  fi
+  result="$result $package"
+done
+
+if system_matches "linux debian"; then
+  if ! [ "$(find /var/lib/apt/lists -maxdepth 0 -mmin -120)" ] || [ ! -d /var/lib/apt/lists/partial ]; then
+    # for some reason this fails at times even when mostly successful
+    apt-get update # || return 1
+  fi
+  apt-get install -y $result || return 1
+elif system_matches "linux alpine"; then
+  if ! [ "$(find /var/cache/apk -maxdepth 0 -mmin -120)" ] || [ ! -d /var/cache/apk ]; then
+    apk update || return 1
+  fi
+  apk add $result || return 1
+else
+  echo "I don't know how to install a package on this system: $os" >&2
+  return 1
+fi
+}
+
+

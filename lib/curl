@@ -1,0 +1,84 @@
+#!/bin/bash    # intended to be sourced from other scripts
+# provides functions for executing curl commands
+
+
+
+
+
+
+
+
+type -t execute_curl >/dev/null && return 0
+execute_curl() {
+
+  local retry=0
+  try
+
+    trace "Curling $url"
+
+    local url=${url}
+    local out_to_var=${out_to_var:-}
+    local flags=${flags:-}
+    local secret_flags=${secret_flags:-}
+    local data=${data:-}
+    local url_encode=${url_encode:-f}
+    local job_slot=${job_slot:-}
+    local pretend=${pretend:-f}
+
+    if [ "${env:-}" == direct -o "${env:-}" == local -o "${noproxy:-}" == t ]; then
+      unset HTTPS_PROXY HTTP_PROXY NO_PROXY
+    else
+      export HTTPS_PROXY=http://proxy.aexp.com:8080
+      export HTTP_PROXY=http://proxy.aexp.com:8080
+      export NO_PROXY=.aexp.com
+    fi
+
+    if [ "${data:-}" ]; then
+      if [ "$url_encode" == t ]; then
+        data=${data//\\/\\\\}
+        data=${data//\$/\\\$}
+        data=${data//\"/\\\"}
+        flags+=" --data-urlencode \"$data\""
+      else
+        flags+=" -d'$data'"
+      fi
+    fi
+
+    local error
+    if [ $trace -gt $curl_trace ]; then
+      flags+=" -v"
+    fi
+    job_slot=$job_slot err_to_var=error secret="$secret_flags" execute "curl $flags $secret_flags $url"
+
+    if [ "$error" ]; then
+      if [ $trace -gt $curl_trace ]; then
+        trace "$error"
+      else
+        err "$error"
+      fi
+    fi
+
+    case $execute_return_code in 
+      35)
+        err "Curl error code 35, ssl problem"
+        exit 1
+        ;;
+      0)
+        ;;
+      *)
+        err "Unknown curl error code: $execute_return_code"
+        exit 1
+        ;;
+    esac
+
+    if [ "$pretend" == t ]; then
+      if [ "${out_to_var:-}" ]; then
+        eval "$out_to_var=\"pretending\""
+      fi
+    fi
+
+  end_try
+  handle_return
+
+}
+

@@ -1,0 +1,312 @@
+#!/bin/bash                        # intended to be sourced from other scripts
+# provides functions for managing background jobs
+
+
+
+
+
+
+
+
+type -t start_background_job >/dev/null && return 0
+start_background_job() {
+  try
+
+    local command=$1
+    local job_slot=${job_slot:-main}
+    local pretend=${pretend:-f}
+    trace "Starting background job [$job_slot]: $command"
+
+    local show_command=${show_command:-f}
+    local execute_command=t
+
+    [ $pretend == t ] && show_command=t
+    [ $pretend == t ] && execute_command=f
+
+    [ $show_command == t ] && trace_force=t trace "starting background job [$job_slot]: $command" 
+    if [ $execute_command == t ]; then
+
+      local fifo_base=/tmp/fifo_$$_$job_slot
+      trace "Checking fifos at $fifo_base"
+      if [ -e ${fifo_base}_0 ]; then
+        err "Fifo already exists at ${fifo_base}_0 . Maybe this command was executed twice with the same job_slot. If not, you'll need to delete this file and try again."
+        fail
+      fi
+
+      mkfifo ${fifo_base}_0 ${fifo_base}_1 || fail
+      cleanup_on_exit+="rm ${fifo_base}* &>/dev/null || true;"
+
+      # this keeps the fifo open even if commands that output to this fifo send an end-of-file when they terminate
+      fifo_counter=${fifo_counter:-5}
+      deep trace "Binding file descriptors $fifo_counter and $((fifo_counter+1))"
+      eval "exec $fifo_counter<>${fifo_base}_0 $((fifo_counter+1))<>${fifo_base}_1"
+      let fifo_counter+=2 || true
+
+      deep trace "Executing command..."
+      eval "$command <${fifo_base}_0 &>${fifo_base}_1 &"
+
+    fi
+
+  end_try
+  handle_return
+}
+
+to_background_job() {
+  try
+
+    local output=$1
+    local job_slot=${job_slot:-main}
+    local secret=${secret:-none}
+    local sleep_between_lines=${sleep_between_lines:-0}
+    local pretend=${pretend:-f}
+
+    trace "To background job [$job_slot]"
+
+    local show_command=${show_command:-f}
+    local execute_command=t
+
+    [ $pretend == t -o $trace -gt 0 ] && show_command=t
+    [ $pretend == t ] && execute_command=f
+
+    if [ $show_command == t ]; then
+      local trace_output=$output
+      if [ "$secret" != none ]; then
+        trace_output=${output//$secret/**secret**} 
+      fi
+      trace_force=t trace "$trace_output"
+    fi
+
+    if [ $execute_command == t ]; then
+
+      local fifo_base=/tmp/fifo_$$_$job_slot
+
+      local NL=$'\n'
+      output=${output%$NL}
+      output="$output$NL"
+
+      local line
+      while IFS= read -r line; do
+        { echo "$line"; } >${fifo_base}_0
+        [ $sleep_between_lines != 0 ] && sleep $sleep_between_lines
+      done <<<"$output"
+
+    fi
+
+  end_try
+  handle_return
+}
+
+from_background_job() {
+  try
+
+    local job_slot=${job_slot:-main}
+    local background_timeout=${background_timeout:-20}
+    local stop_after=${stop_after:-}
+    local fail_after=${fail_after:-}
+    local interact=${interact:-}
+    local secret=${secret:-none}
+    local out_to_var=${out_to_var:-}
+    local extra=
+    [ "$stop_after" ] && extra+=" stop_after=$stop_after"
+    [ "$fail_after" ] && extra+=" fail_after=$fail_after"
+    trace "From background job [$job_slot] background_timeout=$background_timeout$extra"
+
+    timed_out=f
+    failed=f
+
+    local fifo_base=/tmp/fifo_$$_$job_slot
+
+    local line= char= found=f i 
+    local interact_in=() interact_out=() stop_after_count=0 interact_count=0 s
+
+    source ../lib/general/string_utils
+
+    [ "$out_to_var" ] && eval "$out_to_var="
+
+    if [ "$interact" ]; then
+
+      split_to_array interact $'\n'
+      interact_count=${#interact[*]}
+      local c=0
+      for ((i=0; i<interact_count; i++)); do
+        s=${interact[$i]:-}
+        s=${s##*( )}
+        if [ "$s" ]; then
+          if [ $((c%2)) == 0 ]; then
+            escape_regex s
+            interact_in+=( "$s" )
+          else
+            interact_out+=( "$s" )
+          fi
+          let c++
+        fi
+      done
+      interact_count=$c
+
+      let interact_count/=2
+
+    fi
+
+    if [ "$stop_after" ]; then
+
+      split_to_array stop_after $'\n'
+      stop_after_count=${#stop_after[*]}
+      for ((i=0; i<stop_after_count; i++)); do
+        s=${stop_after[$i]##*( )}
+        if [ "$s" ]; then
+          escape_regex s
+          stop_after+=( "$s" )
+        fi
+      done
+
+    fi
+
+    if [ "$fail_after" ]; then
+      escape_regex fail_after
+    fi
+
+    if [ ! -p ${fifo_base}_1 ]; then
+      err "FIFO missing: ${fifo_base}_1"
+      stack_trace
+      fail
+    fi
+
+    trace "Waiting for background job output from ${fifo_base}_1"
+    while IFS= read -n1 -r -t $background_timeout char; do
+      if [ "$char" ]; then
+        line+=$char
+        from_background_job__check_line || break
+      else
+        from_background_job__output_line || fail
+        line=
+      fi
+    done <${fifo_base}_1; maybe_break
+
+    if [ "$line" ]; then
+      if [ $found == f -a $failed == f ]; then
+        trace "timed out with remaining line:" \
+          "$(echo -n "${line// /~}" | hexdump -e '60/1 "%_c " "\n"')"
+      fi
+      no_newline=t from_background_job__output_line || fail
+    fi
+
+    if [ $found == f -a $failed == f ]; then
+      timed_out=t
+      trace "Timed out after $background_timeout seconds"
+    fi
+
+    [ $timed_out == t -o $failed == t ] && fail
+
+  end_try
+  handle_return
+}
+
+from_background_job__check_line() {
+
+  if [ "$stop_after" ]; then
+    for ((i=0; i<stop_after_count; i++)); do
+      if [[ "$line" =~ ${stop_after[$i]} ]]; then
+        deep trace "stopped after [$stop_after]"
+        found=t
+        return 1
+      fi
+    done
+  fi
+
+  if [ "$fail_after" ]; then
+    if [[ "$line" =~ $fail_after ]]; then
+      deep trace "failed after [$fail_after]"
+      failed=t
+      return 1
+    fi
+  fi
+
+  if [ $interact_count -gt 0 ]; then
+    for ((i=0; i<interact_count; i++)); do
+      if [[ "$line" =~ ${interact_in[$i]} ]]; then
+        deep trace "interact matched [${interact_in[$i]}]"
+        no_newline=t from_background_job__output_line || fail
+        line=
+        secret="$secret" to_background_job "${interact_out[$i]}"
+        break
+      fi
+    done; maybe_break
+  fi
+  return 0
+
+}
+
+from_background_job__output_line() {
+
+  local no_newline=${no_newline:-f}
+  local fbj_result=$line
+  [ "$no_newline" == f ] && fbj_result=$fbj_result$NL
+
+  if [ "$out_to_var" ]; then
+    deep trace "appending to $out_to_var: ${fbj_result%$NL}"
+    eval "$out_to_var+=\$fbj_result"
+  else
+    out "${fbj_result%$NL}"
+  fi
+
+  return 0
+
+}
+
+flush_background_job() {
+  try
+
+    local job_slot=${job_slot:-main}
+    local background_timeout=${background_timeout:-1}
+
+    deep trace "flush output from job [$job_slot]" 
+
+    local fifo_base=/tmp/fifo_$$_$job_slot
+
+    line=
+    while IFS= read -n1 -r -t $background_timeout -r char; do
+      if [ "$char" ]; then
+        line+=$char
+      else
+        deep trace "Flushing: $line"
+        line=
+      fi
+    done <${fifo_base}_1
+
+    if [ "$line" ]; then
+      deep trace "Flushing: $line"
+    fi
+
+  end_try
+  handle_return
+}
+
+stop_background_job() {
+  try
+
+    local job_slot=${job_slot:-main}
+    local fifo_base=/tmp/fifo_$$_$job_slot
+
+    if [ "$fifo_counter" -lt 7 ]; then
+      deep trace "Not reducing fifo_counter, since it's already at $fifo_counter"
+      break
+    fi
+
+    trace "Stopping [$job_slot]"
+
+    let fifo_counter-=2 || true
+    deep trace "Freeing file descriptors $fifo_counter and $((fifo_counter+1))"
+    eval "exec $fifo_counter>&- $((fifo_counter+1))>&-"
+
+    rm ${fifo_base}* &>/dev/null || true
+
+    if [ -e ${fifo_base}_0 ]; then
+      err "Fifo remains after I tried to delete it: ${fifo_base}_0"
+      fail
+    fi
+
+  end_try
+  handle_return
+  return 0
+}
+
