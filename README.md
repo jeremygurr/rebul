@@ -4,3 +4,4 @@ Intended as a replacement for ant, mvn, gradle to build / test / package / run s
 
 It pushes convention over configuration to the point that there are no traditional configuration files for a project. 
 
+This project is based on the simpleton script framework.

@@ -1,9 +1,0 @@
-pbrun /bin/su -
-
-alias u='cd ..'
-alias d='docker'
-alias j='journalctl'
-alias s='systemctl'
-alias jf='journalctl -n 100 -f -u'
-alias de='docker exec -ti'
-alias dl='docker logs -f'
