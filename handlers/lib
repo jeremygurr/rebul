@@ -1,0 +1,16 @@
+#!/bin/bash
+
+handle() {
+
+local subject=$1
+trace 0 "lib handler: $subject"
+begin_function
+
+  local dir
+  begin_for dir in $(find "$subject" -mindepth 1 -maxdepth 1 -type d); doo
+  done
+
+end_function
+handle_return
+
+}

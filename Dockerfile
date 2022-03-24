@@ -13,5 +13,5 @@ RUN apk add gdb
 
 ENV PAGER=less
 
-CMD /bin/bash
+CMD /bin/bash /repo/simpleton/init
 
