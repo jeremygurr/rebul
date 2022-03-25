@@ -3,14 +3,51 @@
 handle() {
 
 local subject=$1
-trace 0 "lib handler: $subject"
+local pom_repos=${pom_repos:-repo1.maven.org}
+
+trace 0 "Executing lib handler for $subject"
 begin_function
 
   local dir
-  begin_for dir in $(find "$subject" -mindepth 1 -maxdepth 1 -type d); doo
-  done
+  begin_for dir in $(find "$subject" -mindepth 1 -maxdepth 1 -type d -empty); doo
+    # example dir: pom:org.junit.jupiter:junit-jupiter-api:5.7.0
+    IFS=: read type group name version <<<$dir
+    case "$type" in
+      pom)
+        local repo succeeded url
+        begin_for repo in $pom_repos; doo
+          trace 0 "Fetching artifacts from pom repo $repo"
+          succeeded=t
+          attempt_download $name-$version.pom
+          attempt_download $name-$version.jar
+          [ $succeeded == t ] && break
+        end_for
+        ;;
+      *) 
+        err "Unknown lib type: $type for ${dir##*/}"
+        fail
+        ;;
+    esac
+  end_for
 
 end_function
 handle_return
 
+}
+
+attempt_download() {
+  local target=$1
+  trace 0 "Will download $target if needed"
+  begin_function
+    # example url: https://repo1.maven.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.pom
+    local url=https://$repo/maven2/${group//./\/}/$name/$version/$target
+    if [ $succeeded == t -a ! -f $dir/$target ]; then
+      trace 0 "Attempting to download"
+      curl -sf $url -o $dir/$target || succeeded=f
+      [ $succeeded == f ] && trace 0 "Failed to download. Maybe it's in a different repo."
+    else
+      trace 0 "Don't need to download"
+    fi
+  end_function
+  handle_return
 }
