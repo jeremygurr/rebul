@@ -13,5 +13,8 @@ RUN apk add gdb
 
 ENV PAGER=less
 
+COPY ./simpleton/ /repo/simpleton/
+
+WORKDIR /work
 CMD /bin/bash /repo/simpleton/init
 
