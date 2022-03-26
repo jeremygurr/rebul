@@ -8,27 +8,32 @@ local pom_repos=${pom_repos:-repo1.maven.org}
 trace 0 "Executing lib handler for $subject"
 begin_function
 
-  local dir base_dir
-  begin_for dir in $(find "$subject" -mindepth 1 -maxdepth 1 -type d -empty); doo
-    base_dir=${dir##*/}
+  local dir artifact_spec
+  [ ! -d "$subject/out" ] && (mkdir "$subject/out" || fail)
+  begin_for dir in $(find "$subject" -mindepth 1 -maxdepth 1 -type f); doo
+    artifact_spec=${dir##*/}
     # example dir: pom:org.junit.jupiter:junit-jupiter-api:5.7.0
-    IFS=: read type group name version <<<$base_dir
+    IFS=: read type group name version <<<$artifact_spec
     case "$type" in
       pom)
         local repo succeeded url
         begin_for repo in $pom_repos; doo
           trace 0 "Fetching artifacts from pom repo $repo"
           succeeded=t
-          attempt_download $name-$version.pom
-          attempt_download $name-$version.jar
+          attempt_pom_download $name-$version.pom || fail
+          attempt_pom_download $name-$version.jar || fail
           [ $succeeded == t ] && break
         end_for
         ;;
       *) 
-        err "Unknown lib type: $type for $base_dir"
+        err "Unknown lib type: $type for $artifact_spec"
         fail
         ;;
     esac
+    if [ $succeeded == f ]; then
+      err "Could not fetch artifact $artifact_spec"
+      fail
+    fi
   end_for
 
 end_function
@@ -36,19 +41,32 @@ handle_return
 
 }
 
-attempt_download() {
+attempt_pom_download() {
   local target=$1
+  local slashed_group=${group//./\/}
   trace 0 "Will download $target if needed"
   begin_function
-    # example url: https://repo1.maven.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.pom
-    local url=https://$repo/maven2/${group//./\/}/$name/$version/$target
-    if [ $succeeded == t -a ! -f $dir/$target ]; then
-      trace 0 "Attempting to download"
-      curl -sf $url -o $dir/$target || succeeded=f
-      [ $succeeded == f ] && trace 0 "Failed to download. Maybe it's in a different repo."
+    if [ $succeeded == t -a ! -e $subject/out/$target ]; then
+      local cache_path=~/.m2/repository/$slashed_group/$name/$version
+      mkdir -p "$cache_path" || fail
+
+      if [ ! -e "$cache_path/$target" ]; then
+        trace 0 "Attempting to download"
+        # example url: https://repo1.maven.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.pom
+        local url=https://$repo/maven2/$slashed_group/$name/$version/$target
+        curl -sf $url -o "$cache_path/$target" || succeeded=f
+        if [ $succeeded == f ]; then 
+          trace 0 "Failed to download. Maybe it's in a different repo."
+        else
+          trace 0 "Successfully downloaded"
+        fi
+      fi
+
+      ln -s "$cache_path/$target" "$subject/out/$target" || fail
     else
       trace 0 "Don't need to download"
     fi
   end_function
   handle_return
 }
+
