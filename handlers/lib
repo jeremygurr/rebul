@@ -8,10 +8,11 @@ local pom_repos=${pom_repos:-repo1.maven.org}
 trace 0 "Executing lib handler for $subject"
 begin_function
 
-  local dir
+  local dir base_dir
   begin_for dir in $(find "$subject" -mindepth 1 -maxdepth 1 -type d -empty); doo
+    base_dir=${dir##*/}
     # example dir: pom:org.junit.jupiter:junit-jupiter-api:5.7.0
-    IFS=: read type group name version <<<$dir
+    IFS=: read type group name version <<<$base_dir
     case "$type" in
       pom)
         local repo succeeded url
@@ -24,7 +25,7 @@ begin_function
         end_for
         ;;
       *) 
-        err "Unknown lib type: $type for ${dir##*/}"
+        err "Unknown lib type: $type for $base_dir"
         fail
         ;;
     esac
