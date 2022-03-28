@@ -18,6 +18,7 @@ fi
 set -x
 docker run -it --rm -u $UID --name rebul -e COLUMNS=$COLUMNS \
   -v $SIMPLETON_REPO:/simpleton \
+  -v $SIMPLETON_REPO/../rebul:/rebul \
   -v $SIMPLETON_HOME:/home \
   -v $SIMPLETON_WORKSPACE:/work \
   -e USER=$USER rebul
