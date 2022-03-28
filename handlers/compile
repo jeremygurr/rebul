@@ -1,0 +1,17 @@
+#!/bin/bash
+
+handle() {
+
+local subject=$1
+
+trace 0 "Executing compile handler for $subject"
+begin_function
+
+  [ ! -d "$subject/out" ] && (mkdir "$subject/out" || fail)
+
+
+end_function
+handle_return
+
+}
+
