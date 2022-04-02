@@ -9,7 +9,6 @@ trace 0 "Executing lib handler for $subject"
 begin_function
 
   local dir artifact_spec
-  [ ! -d "$subject/out" ] && (mkdir "$subject/out" || fail)
   begin_for dir in $(find "$subject" -mindepth 1 -maxdepth 1 -type f); doo
     artifact_spec=${dir##*/}
     # example dir: pom:org.junit.jupiter:junit-jupiter-api:5.7.0
